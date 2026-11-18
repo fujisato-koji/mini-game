@@ -93,8 +93,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rk td:last-child,.rk th:last-child{text-align:right}
 .rk tr:nth-child(2) td{color:var(--yel);text-shadow:0 0 10px rgba(255,225,77,.6)}
 .rk tr.me td{background:rgba(34,232,255,.14);color:#fff}
-.plist{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;margin:8px auto 0}
-.pchip{padding:5px 10px;font-family:var(--f);font-size:11px;letter-spacing:.1em;border:1px solid rgba(255,255,255,.25);color:var(--dim)}
+.plist{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:340px;margin:18px auto 0}
+.plh{flex-basis:100%;font-size:11px;color:var(--dim);margin-bottom:2px}
+.pchip{padding:8px 12px;font-family:var(--f);font-size:12px;letter-spacing:.1em;border:1px solid rgba(255,255,255,.25);color:var(--dim)}
 .pchip.on{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 10px rgba(34,232,255,.4)}
 .btn.danger{border-color:var(--red);color:var(--red)}
 </style>
@@ -137,7 +138,8 @@ const G={state:'boot',mode:'normal',L:1,life:10,score:0,m:null,P:null,cs:24,camX
 function loadSave(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(s&&s.runs){s.rank=s.rank||[];s.name=s.name||'';s.best=s.best||{};
     // 旧形式(難易度だけのキー)を「名前|難易度」へ移す
     for(const o of[s.runs,s.best])for(const k of Object.keys(o))if(!k.includes('|')){o[(s.name||'PLAYER')+'|'+k]=o[k];delete o[k]}
-    return s}}catch(e){}return{runs:{},best:{},mute:false,rank:[],name:''}}
+    s.players=s.players||[...new Set([s.name,...Object.keys(s.runs).map(k=>k.split('|')[0]),...s.rank.map(r=>r.name)].filter(Boolean))].slice(0,10);
+    return s}}catch(e){}return{runs:{},best:{},mute:false,rank:[],name:'',players:[]}}
 const save=loadSave();
 function writeSave(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(save))}catch(e){}}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().catch(()=>{})}catch(e){}
@@ -280,16 +282,20 @@ function showTitle(){
   layout();G.camX=G.mw/2;G.camY=G.mh/2;titleOv();
 }
 const rk=(n,k)=>(n||'PLAYER')+'|'+k;
+// 過去のプレイヤー: 遊んだ順に最大10人。▸ は続きが残っている人
+function touchPlayer(n){if(!n)return;save.players=[n,...save.players.filter(x=>x!==n)].slice(0,10);writeSave()}
 function playersHTML(){
-  const ns=[...new Set(Object.keys(save.runs).filter(k=>save.runs[k]&&save.runs[k].level>1).map(k=>k.split('|')[0]))];
-  return ns.map(n=>`<button class="pchip${n===save.name?' on':''}" data-act="pick" data-v="${esc(n)}">${esc(n)}</button>`).join('');
+  if(!save.players.length)return'';
+  return`<span class="plh">${save.players.includes(save.name)?'おかえりなさい — ほかの人ならタップで切り替え':'過去のプレイヤー — タップで選択'}</span>`+save.players.map(n=>{
+    const c=Object.keys(MODES).some(k=>{const r=save.runs[rk(n,k)];return r&&r.level>1});
+    return`<button class="pchip${n===save.name?' on':''}" data-act="pick" data-v="${esc(n)}">${esc(n)}${c?' ▸':''}</button>`}).join('');
 }
 function cardsHTML(){return Object.entries(MODES).map(([k,M])=>{const r=save.runs[rk(save.name,k)],b=save.best[rk(save.name,k)];
     return`<button class="mode" data-act="mode" data-v="${k}" style="--mc:${M.col}"><b>${M.name}</b><i>${M.jp}</i><small>♥${M.life} · TIME×${M.time} · FOG Lv${M.fog}〜</small>${r&&r.level>1?`<em>CONTINUE Lv${r.level}</em>`:''}${b?`<u>BEST Lv${b.level} · ${b.score}</u>`:''}</button>`}).join('')}
 function titleOv(){
   const cards=cardsHTML();
   showOv(`<div class="panel"><div class="logo" data-t="NEON MAZE">NEON MAZE</div><div class="tag">LABYRINTH PROTOCOL · LEVEL 1–100</div>
-  <label class="nm"><span>PLAYER NAME（ローマ字）</span><input id="pname" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="TARO" value="${esc(save.name||'')}"></label><div id="plist" class="plist">${playersHTML()}</div>
+  <div id="plist" class="plist">${playersHTML()}</div><label class="nm"><span>${save.players.length?'NEW PLAYER — 新しい人はローマ字で入力':'PLAYER NAME（ローマ字）'}</span><input id="pname" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="TARO" value="${esc(save.name||'')}"></label>
   <div class="modes" id="modes">${cards}</div>
   <div class="how">
   <p><b>GOAL</b>光るゲートへ。1面ごとに少しずつ難しくなり、100面で完走。</p>
@@ -308,8 +314,8 @@ function chooseMode(k){
   else newRun(k);
 }
 const newRid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-function newRun(k){G.player=save.name;G.mode=k;G.life=MODES[k].life;G.score=0;G.rid=newRid();startLevel(1)}
-function contRun(k){G.player=save.name;const r=save.runs[rk(G.player,k)];G.mode=k;G.life=r.life;G.score=r.score;G.rid=r.rid||newRid();startLevel(r.level)}
+function newRun(k){G.player=save.name;touchPlayer(G.player);G.mode=k;G.life=MODES[k].life;G.score=0;G.rid=newRid();startLevel(1)}
+function contRun(k){G.player=save.name;touchPlayer(G.player);const r=save.runs[rk(G.player,k)];G.mode=k;G.life=r.life;G.score=r.score;G.rid=r.rid||newRid();startLevel(r.level)}
 function startLevel(L){
   const M=MODES[G.mode];G.L=L;G.P=params(L,M);G.hue=(195+Math.floor((L-1)/10)*41)%360;
   hudEl.classList.remove('hide');hudEl.style.setProperty('--mc',M.col);$('#hmode').textContent=M.name;ov.classList.add('hide');
