@@ -93,6 +93,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .rk td:last-child,.rk th:last-child{text-align:right}
 .rk tr:nth-child(2) td{color:var(--yel);text-shadow:0 0 10px rgba(255,225,77,.6)}
 .rk tr.me td{background:rgba(34,232,255,.14);color:#fff}
+.plist{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;margin:8px auto 0}
+.pchip{padding:5px 10px;font-family:var(--f);font-size:11px;letter-spacing:.1em;border:1px solid rgba(255,255,255,.25);color:var(--dim)}
+.pchip.on{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 10px rgba(34,232,255,.4)}
 .btn.danger{border-color:var(--red);color:var(--red)}
 </style>
 </head>
@@ -131,7 +134,10 @@ const keysDown=[];
 const G={state:'boot',mode:'normal',L:1,life:10,score:0,m:null,P:null,cs:24,camX:0,camY:0,held:-1,queued:-1,moving:false,t:0,pc:0,tc:0,moveDir:-1,lastDir:-1,parts:[],floats:[],comets:[],trail:[],shake:0,flash:0,hue:195,time:0};
 
 /* ---------- save ---------- */
-function loadSave(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(s&&s.runs){s.rank=s.rank||[];s.name=s.name||'';return s}}catch(e){}return{runs:{},best:{},mute:false,rank:[],name:''}}
+function loadSave(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(s&&s.runs){s.rank=s.rank||[];s.name=s.name||'';s.best=s.best||{};
+    // 旧形式(難易度だけのキー)を「名前|難易度」へ移す
+    for(const o of[s.runs,s.best])for(const k of Object.keys(o))if(!k.includes('|')){o[(s.name||'PLAYER')+'|'+k]=o[k];delete o[k]}
+    return s}}catch(e){}return{runs:{},best:{},mute:false,rank:[],name:''}}
 const save=loadSave();
 function writeSave(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(save))}catch(e){}}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().catch(()=>{})}catch(e){}
@@ -140,7 +146,7 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 function upsertRank(){
   if(!G.score)return;const n=new Date(),d=`${n.getFullYear()}/${n.getMonth()+1}/${n.getDate()}`,e=save.rank.find(r=>r.rid===G.rid);
   if(e){e.level=Math.max(e.level,G.L);if(G.score>e.score){e.score=G.score;e.date=d}}
-  else save.rank.push({rid:G.rid,name:save.name||'PLAYER',mode:G.mode,level:G.L,score:G.score,date:d});
+  else save.rank.push({rid:G.rid,name:G.player||'PLAYER',mode:G.mode,level:G.L,score:G.score,date:d});
   save.rank.sort((a,b)=>b.score-a.score);if(save.rank.length>50)save.rank.length=50;writeSave();
 }
 function rankHTML(){
@@ -273,12 +279,18 @@ function showTitle(){
   G.m=buildMaze(Object.assign({},P,{side:26}));Object.assign(G,{comets:[],parts:[],floats:[],trail:[]});
   layout();G.camX=G.mw/2;G.camY=G.mh/2;titleOv();
 }
+const rk=(n,k)=>(n||'PLAYER')+'|'+k;
+function playersHTML(){
+  const ns=[...new Set(Object.keys(save.runs).filter(k=>save.runs[k]&&save.runs[k].level>1).map(k=>k.split('|')[0]))];
+  return ns.map(n=>`<button class="pchip${n===save.name?' on':''}" data-act="pick" data-v="${esc(n)}">${esc(n)}</button>`).join('');
+}
+function cardsHTML(){return Object.entries(MODES).map(([k,M])=>{const r=save.runs[rk(save.name,k)],b=save.best[rk(save.name,k)];
+    return`<button class="mode" data-act="mode" data-v="${k}" style="--mc:${M.col}"><b>${M.name}</b><i>${M.jp}</i><small>♥${M.life} · TIME×${M.time} · FOG Lv${M.fog}〜</small>${r&&r.level>1?`<em>CONTINUE Lv${r.level}</em>`:''}${b?`<u>BEST Lv${b.level} · ${b.score}</u>`:''}</button>`}).join('')}
 function titleOv(){
-  const cards=Object.entries(MODES).map(([k,M])=>{const r=save.runs[k],b=save.best[k];
-    return`<button class="mode" data-act="mode" data-v="${k}" style="--mc:${M.col}"><b>${M.name}</b><i>${M.jp}</i><small>♥${M.life} · TIME×${M.time} · FOG Lv${M.fog}〜</small>${r&&r.level>1?`<em>CONTINUE Lv${r.level}</em>`:''}${b?`<u>BEST Lv${b.level} · ${b.score}</u>`:''}</button>`}).join('');
+  const cards=cardsHTML();
   showOv(`<div class="panel"><div class="logo" data-t="NEON MAZE">NEON MAZE</div><div class="tag">LABYRINTH PROTOCOL · LEVEL 1–100</div>
-  <label class="nm"><span>PLAYER NAME（ローマ字）</span><input id="pname" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="TARO" value="${esc(save.name||'')}"></label>
-  <div class="modes">${cards}</div>
+  <label class="nm"><span>PLAYER NAME（ローマ字）</span><input id="pname" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="TARO" value="${esc(save.name||'')}"></label><div id="plist" class="plist">${playersHTML()}</div>
+  <div class="modes" id="modes">${cards}</div>
   <div class="how">
   <p><b>GOAL</b>光るゲートへ。1面ごとに少しずつ難しくなり、100面で完走。</p>
   <p><b>LIFE</b>正解ルートから外れる道に入ると ♥−1。外れたまま奥の分かれ道へ進むと、そのたびに ♥−1（同じ道は1回だけ）。</p>
@@ -289,15 +301,15 @@ function titleOv(){
 }
 function chooseMode(k){
   if(!save.name){const i=$('#pname');if(i){i.classList.remove('err');void i.offsetWidth;i.classList.add('err');i.focus()}return}
-  const r=save.runs[k],M=MODES[k];
+  const r=save.runs[rk(save.name,k)],M=MODES[k];
   if(r&&r.level>1)showOv(`<div class="panel"><div class="kick" style="color:${M.col}">${M.name}</div><div class="big">SELECT</div>
     <button class="btn pri" data-act="cont" data-v="${k}" data-primary>CONTINUE — LEVEL ${r.level}（♥${r.life}）</button>
     <button class="btn sub" data-act="new" data-v="${k}">LEVEL 1 から</button><button class="btn sub" data-act="back">BACK</button></div>`);
   else newRun(k);
 }
 const newRid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-function newRun(k){G.mode=k;G.life=MODES[k].life;G.score=0;G.rid=newRid();startLevel(1)}
-function contRun(k){const r=save.runs[k];G.mode=k;G.life=r.life;G.score=r.score;G.rid=r.rid||newRid();startLevel(r.level)}
+function newRun(k){G.player=save.name;G.mode=k;G.life=MODES[k].life;G.score=0;G.rid=newRid();startLevel(1)}
+function contRun(k){G.player=save.name;const r=save.runs[rk(G.player,k)];G.mode=k;G.life=r.life;G.score=r.score;G.rid=r.rid||newRid();startLevel(r.level)}
 function startLevel(L){
   const M=MODES[G.mode];G.L=L;G.P=params(L,M);G.hue=(195+Math.floor((L-1)/10)*41)%360;
   hudEl.classList.remove('hide');hudEl.style.setProperty('--mc',M.col);$('#hmode').textContent=M.name;ov.classList.add('hide');
@@ -307,7 +319,7 @@ function startLevel(L){
     timeLeft:m.limit,timerOn:false,introT:0,comets:[],cometT:6+Math.random()*6,parts:[],floats:[],trail:[],levelStartScore:G.score,state:'play'});
   G.visited[m.start]=1;keysDown.length=0;hc={};
   layout();const s=cellXY(m.start);G.camX=clampCam((s.x+.5)*G.cs,G.vr.w,G.mw);G.camY=clampCam((s.y+.5)*G.cs,G.vr.h,G.mh);
-  save.runs[G.mode]={level:L,life:G.life,score:G.score,rid:G.rid};writeSave();
+  save.runs[rk(G.player,G.mode)]={level:L,life:G.life,score:G.score,rid:G.rid};writeSave();
   const news=[];
   if(L===M.fog)news.push('FOG ZONE — 視界が狭まる');if(L===8)news.push('COMET — 流れ星が壁を貫通して飛ぶ');
   if(L===10)news.push('×1.5 出現');if(L===18)news.push('START / GOAL がランダムに');if(L===30)news.push('×2 出現');
@@ -327,10 +339,10 @@ function levelClear(){
   G.state='clear';G.moving=false;
   const tl=Math.max(0,Math.floor(G.timeLeft)),tb=tl*20,lb=G.L*100;G.score+=tb+lb;
   const g=cellXY(G.m.goal);burst(g.x,g.y,'#ffe14d',60,7);burst(g.x,g.y,'#ff2bd6',40,5);sfx('clear');
-  const b=save.best[G.mode]||{level:0,score:0};save.best[G.mode]={level:Math.max(b.level,G.L),score:Math.max(b.score,G.score)};
+  const b=save.best[rk(G.player,G.mode)]||{level:0,score:0};save.best[rk(G.player,G.mode)]={level:Math.max(b.level,G.L),score:Math.max(b.score,G.score)};
   hud();upsertRank();
-  if(G.L>=100){save.runs[G.mode]=null;writeSave();setTimeout(showEnding,1500);return}
-  save.runs[G.mode]={level:G.L+1,life:G.life,score:G.score,rid:G.rid};writeSave();
+  if(G.L>=100){save.runs[rk(G.player,G.mode)]=null;writeSave();setTimeout(showEnding,1500);return}
+  save.runs[rk(G.player,G.mode)]={level:G.L+1,life:G.life,score:G.score,rid:G.rid};writeSave();
   setTimeout(()=>{if(G.state!=='clear')return;showOv(`<div class="panel"><div class="kick">LEVEL ${G.L}</div><div class="big">CLEAR</div><div class="rows">
   <div><span>TIME BONUS</span><b>${tl}s × 20 = ${tb}</b></div><div><span>LEVEL BONUS</span><b>${lb}</b></div>
   <div><span>LIFE</span><b>♥ ${G.life}</b></div><div><span>SCORE</span><b>${G.score}</b></div></div>
@@ -338,7 +350,7 @@ function levelClear(){
 }
 function gameOver(){
   if(G.state==='over')return;G.state='over';G.life=0;G.moving=false;hud();sfx('over');
-  const M=MODES[G.mode];save.runs[G.mode]={level:G.L,life:M.life,score:G.levelStartScore,rid:G.rid};writeSave();upsertRank();
+  const M=MODES[G.mode];save.runs[rk(G.player,G.mode)]={level:G.L,life:M.life,score:G.levelStartScore,rid:G.rid};writeSave();upsertRank();
   setTimeout(()=>showOv(`<div class="panel"><div class="kick" style="color:var(--red)">♥ 0</div><div class="big red">SYSTEM FAILURE</div>
   <p class="note">LEVEL ${G.L} で力尽きた。SCORE ${G.score}</p>${rankHTML()}
   <button class="btn pri" data-act="retry" data-primary>LEVEL ${G.L} から再挑戦（♥${M.life}）</button><button class="btn sub" data-act="title">TITLE</button></div>`),900);
@@ -557,6 +569,7 @@ ov.addEventListener('click',e=>{
   else if(a==='retry'){G.life=MODES[G.mode].life;G.score=G.levelStartScore;startLevel(G.L)}
   else if(a==='title')showTitle();else if(a==='back')titleOv();else if(a==='resume')resume();
   else if(a==='mute'){save.mute=!save.mute;writeSave();ensureAudio();b.textContent=muteLabel()}
+  else if(a==='pick'){save.name=v;writeSave();titleOv()}
   else if(a==='rank')showRank();
   else if(a==='rclear'){if(b.dataset.arm){save.rank=[];writeSave();showRank()}else{b.dataset.arm=1;b.textContent='もう一度押すと全部消える';b.classList.add('danger')}}
 });
@@ -565,6 +578,7 @@ ov.addEventListener('input',e=>{
   const i=e.target;if(i.id!=='pname'||e.isComposing)return;
   const v=i.value.toUpperCase().replace(/[^A-Z0-9 ._-]/g,'').slice(0,12);if(v!==i.value)i.value=v;
   save.name=v.trim();writeSave();i.classList.remove('err');
+  const md=$('#modes'),pl=$('#plist');if(md)md.innerHTML=cardsHTML();if(pl)pl.innerHTML=playersHTML();
 });
 ov.addEventListener('compositionend',e=>{if(e.target.id==='pname')e.target.dispatchEvent(new Event('input',{bubbles:true}))});
 /* ---------- boot ---------- */
