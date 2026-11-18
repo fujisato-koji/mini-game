@@ -80,6 +80,20 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 @keyframes fin{from{opacity:0;transform:translateY(10px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
 .warnline{margin:30px 0 12px;font-family:var(--f);font-size:12px;letter-spacing:.3em;color:var(--red);text-shadow:0 0 10px var(--red)}
 .soon{font-family:var(--f);font-weight:700;font-size:16px;letter-spacing:.6em;color:var(--yel);margin:16px 0 22px;text-shadow:0 0 14px var(--yel)}
+.nm{display:block;margin:20px auto 0;max-width:320px;text-align:left}
+.nm span{display:block;font-family:var(--f);font-size:10px;letter-spacing:.2em;color:var(--dim);margin-bottom:6px}
+#pname{width:100%;padding:12px 14px;background:rgba(5,8,20,.8);border:1px solid var(--cyan);border-radius:0;color:#fff;font-family:var(--f);font-size:18px;letter-spacing:.2em;text-transform:uppercase;outline:none;user-select:text;-webkit-user-select:text;touch-action:auto;box-shadow:inset 0 0 16px rgba(34,232,255,.15)}
+#pname:focus{box-shadow:0 0 18px rgba(34,232,255,.5),inset 0 0 16px rgba(34,232,255,.2)}
+#pname.err{border-color:var(--red);animation:shk .35s}
+@keyframes shk{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.rk{width:100%;border-collapse:collapse;margin:4px 0 8px;font-family:var(--f);font-size:12px}
+.rk th{font-size:9px;letter-spacing:.15em;color:var(--dim);font-weight:500;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.15)}
+.rk td{padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.06)}
+.rk td:nth-child(2),.rk th:nth-child(2){text-align:left;letter-spacing:.08em}
+.rk td:last-child,.rk th:last-child{text-align:right}
+.rk tr:nth-child(2) td{color:var(--yel);text-shadow:0 0 10px rgba(255,225,77,.6)}
+.rk tr.me td{background:rgba(34,232,255,.14);color:#fff}
+.btn.danger{border-color:var(--red);color:var(--red)}
 </style>
 </head>
 <body>
@@ -117,9 +131,25 @@ const keysDown=[];
 const G={state:'boot',mode:'normal',L:1,life:10,score:0,m:null,P:null,cs:24,camX:0,camY:0,held:-1,queued:-1,moving:false,t:0,pc:0,tc:0,moveDir:-1,lastDir:-1,parts:[],floats:[],comets:[],trail:[],shake:0,flash:0,hue:195,time:0};
 
 /* ---------- save ---------- */
-function loadSave(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(s&&s.runs)return s}catch(e){}return{runs:{},best:{},mute:false}}
+function loadSave(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(s&&s.runs){s.rank=s.rank||[];s.name=s.name||'';return s}}catch(e){}return{runs:{},best:{},mute:false,rank:[],name:''}}
 const save=loadSave();
 function writeSave(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(save))}catch(e){}}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist().catch(()=>{})}catch(e){}
+const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+// ランキング: 1プレイ(rid)につき1行、進むたびに最高値で上書き。この端末の localStorage に残る
+function upsertRank(){
+  if(!G.score)return;const n=new Date(),d=`${n.getFullYear()}/${n.getMonth()+1}/${n.getDate()}`,e=save.rank.find(r=>r.rid===G.rid);
+  if(e){e.level=Math.max(e.level,G.L);if(G.score>e.score){e.score=G.score;e.date=d}}
+  else save.rank.push({rid:G.rid,name:save.name||'PLAYER',mode:G.mode,level:G.L,score:G.score,date:d});
+  save.rank.sort((a,b)=>b.score-a.score);if(save.rank.length>50)save.rank.length=50;writeSave();
+}
+function rankHTML(){
+  const r=save.rank;if(!r.length)return'<p class="note">まだ記録がありません</p>';
+  const row=(e,i)=>`<tr class="${e.rid===G.rid?'me':''}"><td>${i+1}</td><td>${esc(e.name)}</td><td style="color:${MODES[e.mode].col}">${MODES[e.mode].name.slice(0,3)}</td><td>${e.level}</td><td>${e.score}</td></tr>`;
+  const me=r.findIndex(e=>e.rid===G.rid);
+  return`<table class="rk"><tr><th>#</th><th>NAME</th><th>MODE</th><th>LV</th><th>SCORE</th></tr>${r.slice(0,10).map(row).join('')}${me>=10?row(r[me],me):''}</table>`;
+}
+function showRank(){showOv(`<div class="panel"><div class="kick">LOCAL · この端末に保存</div><div class="big">RANKING</div>${rankHTML()}<button class="btn sub" data-act="rclear">ランキングを消す</button><button class="btn pri" data-act="back" data-primary>BACK</button></div>`)}
 
 /* ---------- audio ---------- */
 let AC=null;
@@ -247,34 +277,37 @@ function titleOv(){
   const cards=Object.entries(MODES).map(([k,M])=>{const r=save.runs[k],b=save.best[k];
     return`<button class="mode" data-act="mode" data-v="${k}" style="--mc:${M.col}"><b>${M.name}</b><i>${M.jp}</i><small>♥${M.life} · TIME×${M.time} · FOG Lv${M.fog}〜</small>${r&&r.level>1?`<em>CONTINUE Lv${r.level}</em>`:''}${b?`<u>BEST Lv${b.level} · ${b.score}</u>`:''}</button>`}).join('');
   showOv(`<div class="panel"><div class="logo" data-t="NEON MAZE">NEON MAZE</div><div class="tag">LABYRINTH PROTOCOL · LEVEL 1–100</div>
+  <label class="nm"><span>PLAYER NAME（ローマ字）</span><input id="pname" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="TARO" value="${esc(save.name||'')}"></label>
   <div class="modes">${cards}</div>
   <div class="how">
   <p><b>GOAL</b>光るゲートへ。1面ごとに少しずつ難しくなり、100面で完走。</p>
   <p><b>LIFE</b>正解ルートから外れる道に入ると ♥−1。外れたまま奥の分かれ道へ進むと、そのたびに ♥−1（同じ道は1回だけ）。</p>
   <p><b>ITEM</b>+1〜+3・×1.5・×2 で ♥ が増える。♥ を削ってでも取りに行くかは判断しだい。流れ星は壁を貫通して横切る。</p>
   <p><b>TIME</b>時間切れは ♥1 と引き換えに延長。</p>
-  <p><b>操作</b>PC：矢印 / WASD・クリック・ドラッグ　スマホ：スワイプ・タップ。通路は次の分かれ道まで自動で進む。</p>
-  </div><button class="btn sub" data-act="mute">${muteLabel()}</button></div>`);
+  <p><b>操作</b>PC：矢印 / WASD・クリック・ドラッグ　スマホ：指でなぞる・タップ。1マスずつ進む（キーは押しっぱなしで連続）。</p>
+  </div><button class="btn sub" data-act="rank">RANKING</button><button class="btn sub" data-act="mute">${muteLabel()}</button></div>`);
 }
 function chooseMode(k){
+  if(!save.name){const i=$('#pname');if(i){i.classList.remove('err');void i.offsetWidth;i.classList.add('err');i.focus()}return}
   const r=save.runs[k],M=MODES[k];
   if(r&&r.level>1)showOv(`<div class="panel"><div class="kick" style="color:${M.col}">${M.name}</div><div class="big">SELECT</div>
     <button class="btn pri" data-act="cont" data-v="${k}" data-primary>CONTINUE — LEVEL ${r.level}（♥${r.life}）</button>
     <button class="btn sub" data-act="new" data-v="${k}">LEVEL 1 から</button><button class="btn sub" data-act="back">BACK</button></div>`);
   else newRun(k);
 }
-function newRun(k){G.mode=k;G.life=MODES[k].life;G.score=0;startLevel(1)}
-function contRun(k){const r=save.runs[k];G.mode=k;G.life=r.life;G.score=r.score;startLevel(r.level)}
+const newRid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function newRun(k){G.mode=k;G.life=MODES[k].life;G.score=0;G.rid=newRid();startLevel(1)}
+function contRun(k){const r=save.runs[k];G.mode=k;G.life=r.life;G.score=r.score;G.rid=r.rid||newRid();startLevel(r.level)}
 function startLevel(L){
   const M=MODES[G.mode];G.L=L;G.P=params(L,M);G.hue=(195+Math.floor((L-1)/10)*41)%360;
   hudEl.classList.remove('hide');hudEl.style.setProperty('--mc',M.col);$('#hmode').textContent=M.name;ov.classList.add('hide');
   const m=buildMaze(G.P);
   m.limit=Math.round((8+m.len*G.P.k+m.dec*1.2+(G.P.fog?m.len*.15:0))*M.time);
-  Object.assign(G,{m,pc:m.start,tc:m.start,t:0,moving:false,moveDir:-1,lastDir:-1,queued:-1,held:-1,charged:new Set(),visited:new Uint8Array(m.n),
+  Object.assign(G,{m,pc:m.start,tc:m.start,t:0,moving:false,moveDir:-1,lastDir:-1,q:[],held:-1,charged:new Set(),visited:new Uint8Array(m.n),
     timeLeft:m.limit,timerOn:false,introT:0,comets:[],cometT:6+Math.random()*6,parts:[],floats:[],trail:[],levelStartScore:G.score,state:'play'});
   G.visited[m.start]=1;keysDown.length=0;hc={};
   layout();const s=cellXY(m.start);G.camX=clampCam((s.x+.5)*G.cs,G.vr.w,G.mw);G.camY=clampCam((s.y+.5)*G.cs,G.vr.h,G.mh);
-  save.runs[G.mode]={level:L,life:G.life,score:G.score};writeSave();
+  save.runs[G.mode]={level:L,life:G.life,score:G.score,rid:G.rid};writeSave();
   const news=[];
   if(L===M.fog)news.push('FOG ZONE — 視界が狭まる');if(L===8)news.push('COMET — 流れ星が壁を貫通して飛ぶ');
   if(L===10)news.push('×1.5 出現');if(L===18)news.push('START / GOAL がランダムに');if(L===30)news.push('×2 出現');
@@ -295,9 +328,9 @@ function levelClear(){
   const tl=Math.max(0,Math.floor(G.timeLeft)),tb=tl*20,lb=G.L*100;G.score+=tb+lb;
   const g=cellXY(G.m.goal);burst(g.x,g.y,'#ffe14d',60,7);burst(g.x,g.y,'#ff2bd6',40,5);sfx('clear');
   const b=save.best[G.mode]||{level:0,score:0};save.best[G.mode]={level:Math.max(b.level,G.L),score:Math.max(b.score,G.score)};
-  hud();
+  hud();upsertRank();
   if(G.L>=100){save.runs[G.mode]=null;writeSave();setTimeout(showEnding,1500);return}
-  save.runs[G.mode]={level:G.L+1,life:G.life,score:G.score};writeSave();
+  save.runs[G.mode]={level:G.L+1,life:G.life,score:G.score,rid:G.rid};writeSave();
   setTimeout(()=>{if(G.state!=='clear')return;showOv(`<div class="panel"><div class="kick">LEVEL ${G.L}</div><div class="big">CLEAR</div><div class="rows">
   <div><span>TIME BONUS</span><b>${tl}s × 20 = ${tb}</b></div><div><span>LEVEL BONUS</span><b>${lb}</b></div>
   <div><span>LIFE</span><b>♥ ${G.life}</b></div><div><span>SCORE</span><b>${G.score}</b></div></div>
@@ -305,9 +338,9 @@ function levelClear(){
 }
 function gameOver(){
   if(G.state==='over')return;G.state='over';G.life=0;G.moving=false;hud();sfx('over');
-  const M=MODES[G.mode];save.runs[G.mode]={level:G.L,life:M.life,score:G.levelStartScore};writeSave();
+  const M=MODES[G.mode];save.runs[G.mode]={level:G.L,life:M.life,score:G.levelStartScore,rid:G.rid};writeSave();upsertRank();
   setTimeout(()=>showOv(`<div class="panel"><div class="kick" style="color:var(--red)">♥ 0</div><div class="big red">SYSTEM FAILURE</div>
-  <p class="note">LEVEL ${G.L} で力尽きた。SCORE ${G.score}</p>
+  <p class="note">LEVEL ${G.L} で力尽きた。SCORE ${G.score}</p>${rankHTML()}
   <button class="btn pri" data-act="retry" data-primary>LEVEL ${G.L} から再挑戦（♥${M.life}）</button><button class="btn sub" data-act="title">TITLE</button></div>`),900);
 }
 function showEnding(){
@@ -315,19 +348,18 @@ function showEnding(){
   showOv(`<div class="panel end"><div class="kick s1">LEVEL 100 CLEAR — ${MODES[G.mode].name}</div>
   <div class="big s2">LABYRINTH COMPLETE</div><p class="note s2">SCORE ${G.score}</p>
   <div class="warnline s3">⚠ DIMENSION SHIFT DETECTED</div>
-  <div class="logo s4" data-t="NEON MAZE 3D">NEON MAZE 3D</div><div class="soon s5">COMING SOON</div>
+  <div class="logo s4" data-t="NEON MAZE 3D">NEON MAZE 3D</div><div class="soon s5">COMING SOON</div><div class="s5">${rankHTML()}</div>
   <button class="btn sub s5" data-act="title" data-primary>TITLE</button></div>`);
 }
 
 /* ---------- play ---------- */
 function canGo(c,d){return(G.m.open[c]&DIRS[d][2])!==0}
 function startMove(d){G.tc=G.pc+DIRS[d][0]+DIRS[d][1]*G.m.cols;G.moveDir=d;G.moving=true;G.timerOn=true}
-function chooseDir(arrived){
-  const c=G.pc,m=G.m;
-  if(G.queued>=0){if(canGo(c,G.queued)){const d=G.queued;G.queued=-1;return d}if(!arrived)G.queued=-1}
-  if(G.held>=0&&canGo(c,G.held)&&!(arrived&&G.held===REV[G.lastDir]))return G.held;
-  if(arrived&&G.lastDir>=0&&c!==m.goal&&m.deg[c]===2){for(let d=0;d<4;d++)if(d!==REV[G.lastDir]&&canGo(c,d))return d}
-  if(arrived)G.queued=-1;
+// 1入力 = 1マス。q は [方向, 塞がっていたときの代わりの方向]。キー押しっぱなし(held)だけ連続で進む
+function chooseDir(){
+  const c=G.pc;
+  while(G.q.length){const [d,a]=G.q.shift();if(canGo(c,d))return d;if(a>=0&&canGo(c,a))return a}
+  if(G.held>=0&&canGo(c,G.held))return G.held;
   return -1;
 }
 function arrive(){const prev=G.pc;G.pc=G.tc;G.lastDir=G.moveDir;enter(prev,G.pc)}
@@ -338,10 +370,10 @@ function enter(prev,c){
   if(G.life<=0){gameOver();return}
   if(c===m.goal)levelClear();
 }
-function input(d){
+function input(d,a){
   if(G.state!=='play')return;
-  if(G.moving&&d===REV[G.moveDir]){const a=G.pc;G.pc=G.tc;G.tc=a;G.t=1-G.t;G.moveDir=d;G.queued=-1;return}
-  G.queued=d;
+  if(G.moving&&d===REV[G.moveDir]&&!G.q.length){const t=G.pc;G.pc=G.tc;G.tc=t;G.t=1-G.t;G.moveDir=d;return}
+  if(G.q.length<4)G.q.push([d,a===undefined?-1:a]);
 }
 function playerPos(){const a=cellXY(G.pc);if(!G.moving)return a;const b=cellXY(G.tc);return{x:a.x+(b.x-a.x)*G.t,y:a.y+(b.y-a.y)*G.t}}
 function popLife(){const e=$('#hlife');e.classList.remove('pop');void e.offsetWidth;e.classList.add('pop')}
@@ -490,6 +522,7 @@ function render(){
 /* ---------- input ---------- */
 const KEYS={ArrowUp:0,KeyW:0,ArrowRight:1,KeyD:1,ArrowDown:2,KeyS:2,ArrowLeft:3,KeyA:3};
 addEventListener('keydown',e=>{
+  if(e.target&&e.target.tagName==='INPUT'){if(e.code==='Enter')e.target.blur();return}
   const d=KEYS[e.code];
   if(d!==undefined){e.preventDefault();if(G.state!=='play')return;ensureAudio();if(!e.repeat)input(d);if(!keysDown.includes(d))keysDown.push(d);G.held=d;return}
   if(e.code==='Escape'||e.code==='KeyP'||e.code==='Space'){e.preventDefault();if(G.state==='play')pause();else if(G.state==='pause')resume();return}
@@ -504,8 +537,12 @@ const dirOf=(dx,dy)=>Math.abs(dx)>Math.abs(dy)?(dx>0?1:3):(dy>0?2:0);
 cv.addEventListener('pointerdown',e=>{ensureAudio();if(G.state!=='play')return;ptr={id:e.pointerId,x:e.clientX,y:e.clientY,sw:false};try{cv.setPointerCapture(e.pointerId)}catch(_){}});
 cv.addEventListener('pointermove',e=>{
   if(!ptr||e.pointerId!==ptr.id||G.state!=='play')return;
-  const dx=e.clientX-ptr.x,dy=e.clientY-ptr.y,th=isTouch?16:12;if(dx*dx+dy*dy<th*th)return;
-  const d=dirOf(dx,dy);if(!ptr.sw||d!==G.held)input(d);G.held=d;ptr.sw=true;ptr.x=e.clientX;ptr.y=e.clientY;
+  // なぞった距離 1 マス分ごとに 1 歩。曲がり角では副方向を代わりに使う。ずれは半分ずつ捨てて誤って曲がらないように
+  const dx=e.clientX-ptr.x,dy=e.clientY-ptr.y,th=Math.max(14,G.cs*.75),ax=Math.abs(dx),ay=Math.abs(dy);
+  if(ax<th&&ay<th)return;
+  const h=ax>=ay,d=h?(dx>0?1:3):(dy>0?2:0),o=h?ay:ax,a=o>th*.3?(h?(dy>0?2:0):(dx>0?1:3)):-1;
+  input(d,a);ptr.sw=true;
+  if(h){ptr.x+=Math.sign(dx)*th;ptr.y+=dy*.5}else{ptr.y+=Math.sign(dy)*th;ptr.x+=dx*.5}
 });
 function pend(e){
   if(!ptr||e.pointerId!==ptr.id)return;
@@ -520,8 +557,16 @@ ov.addEventListener('click',e=>{
   else if(a==='retry'){G.life=MODES[G.mode].life;G.score=G.levelStartScore;startLevel(G.L)}
   else if(a==='title')showTitle();else if(a==='back')titleOv();else if(a==='resume')resume();
   else if(a==='mute'){save.mute=!save.mute;writeSave();ensureAudio();b.textContent=muteLabel()}
+  else if(a==='rank')showRank();
+  else if(a==='rclear'){if(b.dataset.arm){save.rank=[];writeSave();showRank()}else{b.dataset.arm=1;b.textContent='もう一度押すと全部消える';b.classList.add('danger')}}
 });
 
+ov.addEventListener('input',e=>{
+  const i=e.target;if(i.id!=='pname'||e.isComposing)return;
+  const v=i.value.toUpperCase().replace(/[^A-Z0-9 ._-]/g,'').slice(0,12);if(v!==i.value)i.value=v;
+  save.name=v.trim();writeSave();i.classList.remove('err');
+});
+ov.addEventListener('compositionend',e=>{if(e.target.id==='pname')e.target.dispatchEvent(new Event('input',{bubbles:true}))});
 /* ---------- boot ---------- */
 addEventListener('resize',resize);
 resize();showTitle();
